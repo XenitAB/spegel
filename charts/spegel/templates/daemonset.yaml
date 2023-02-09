@@ -24,6 +24,22 @@ spec:
       serviceAccountName: {{ include "spegel.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.spegel.bootstrap.initContainer.enabled }}
+      initContainers:
+        - name: bootstrap
+          image: "{{ required "Image repository needs to be set when using bootstrap init container." .Values.spegel.bootstrap.initContainer.image.repository }}:{{ .Values.spegel.bootstrap.initContainer.image.tag }}"
+          imagePullPolicy: {{ .Values.spegel.bootstrap.initContainer.image.pullPolicy }}
+          command:
+            - /bin/sh 
+            - -c
+          args:
+            - mkdir {{ .Values.spegel.containerdRegistryConfigPath }}/{{ include "spegel.bootstrapRegistry" . }}; cp /tmp/hosts.toml {{ .Values.spegel.containerdRegistryConfigPath }}/{{ include "spegel.bootstrapRegistry" . }}/hosts.toml;
+          volumeMounts:
+            - name: containerd-config
+              mountPath: {{ .Values.spegel.containerdRegistryConfigPath }}
+            - name: bootstrap-mirror
+              mountPath: /tmp
+      {{- end }}
       containers:
       - name: registry
         securityContext:
@@ -71,7 +87,7 @@ spec:
           - name: metrics
             containerPort: {{ .Values.service.metrics.port }}
             protocol: TCP
-        # Startup may take a bit longer on bootsrap as Pods need to find each other.
+        # Startup may take a bit longer on startup as Pods need to find each other.
         # This is why the startup proben is a bit more forgiving, while hitting the endpoint more often.
         startupProbe:
           periodSeconds: 1
@@ -98,6 +114,11 @@ spec:
           hostPath:
             path: {{ .Values.spegel.containerdRegistryConfigPath }}
             type: DirectoryOrCreate
+        {{- if .Values.spegel.bootstrap.initContainer.enabled }}
+        - name: bootstrap-mirror
+          configMap:
+            name: {{ include "spegel.fullname" . }}-bootstrap
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"testing"
@@ -14,6 +15,9 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/metadata"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containers/storage"
+	"github.com/containers/storage/pkg/idtools"
+
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
@@ -76,7 +80,41 @@ func TestOCIClient(t *testing.T) {
 		client: containerdClient,
 	}
 
-	for _, ociClient := range []Client{containerd} {
+	crioDir, _ := os.MkdirTemp("", "")
+	fmt.Println(crioDir)
+	// crioDir := t.TempDir()
+	opts, err := storage.DefaultStoreOptions()
+	require.NoError(t, err)
+	opts.GraphDriverName = "vfs"
+	opts.UIDMap = append(opts.UIDMap, idtools.IDMap{HostID: 1000, Size: 1})
+	opts.GIDMap = append(opts.GIDMap, idtools.IDMap{HostID: 984, Size: 1})
+	opts.RootlessStoragePath = path.Join(crioDir, "rootless")
+	opts.ImageStore = path.Join(crioDir, "image")
+	opts.RunRoot = path.Join(crioDir, "run")
+	opts.GraphRoot = path.Join(crioDir, "graph")
+	store, err := storage.GetStore(opts)
+	require.NoError(t, err)
+	defer store.Shutdown(true)
+	for _, img := range imgs {
+		dgst := digest.Digest(img["digest"])
+		opts := storage.ImageOptions{
+			Digest: dgst,
+		}
+		for k, v := range blobs {
+			opts.BigData = append(opts.BigData, storage.ImageBigDataOption{
+				Key:    k.String(),
+				Digest: k,
+				Data:   v,
+			})
+		}
+		_, err := store.CreateImage("", []string{img["name"]}, "", "", &opts)
+		require.NoError(t, err)
+	}
+	crio := &Crio{
+		store: store,
+	}
+
+	for _, ociClient := range []Client{containerd, crio} {
 		t.Run(ociClient.Name(), func(t *testing.T) {
 			imgs, err := ociClient.ListImages(ctx)
 			require.NoError(t, err)
@@ -94,7 +132,7 @@ func TestOCIClient(t *testing.T) {
 				Digest: dgst,
 			}
 			_, err = ociClient.AllIdentifiers(ctx, img)
-			require.EqualError(t, err, "failed to walk image manifests: could not find any platforms with local content in manifest list: sha256:addc990c58744bdf96364fe89bd4aab38b1e824d51c688edb36c75247cd45fa9")
+			require.ErrorContains(t, err, "could not find any platforms with local content in manifest list: sha256:addc990c58744bdf96364fe89bd4aab38b1e824d51c688edb36c75247cd45fa9")
 
 			contentTests := []struct {
 				mediaType string

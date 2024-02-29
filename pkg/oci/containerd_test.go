@@ -80,19 +80,18 @@ func TestCreateFilter(t *testing.T) {
 		registries          []string
 	}{
 		{
-			name:                "only registries",
+			name:                "with registry filtering",
 			registries:          []string{"https://docker.io", "https://gcr.io"},
 			expectedListFilter:  `name~="^(docker\\.io|gcr\\.io)/"`,
 			expectedEventFilter: `topic~="/images/create|/images/update|/images/delete",event.name~="^(docker\\.io|gcr\\.io)/"`,
 		},
 		{
-			name:                "additional image filtes",
-			registries:          []string{"https://docker.io", "https://gcr.io"},
-			expectedListFilter:  `name~="^(docker\\.io|gcr\\.io)/"`,
-			expectedEventFilter: `topic~="/images/create|/images/update|/images/delete",event.name~="^(docker\\.io|gcr\\.io)/"`,
+			name:                "without registry filtering",
+			registries:          []string{},
+			expectedListFilter:  `name~="^.+/"`,
+			expectedEventFilter: `topic~="/images/create|/images/update|/images/delete",event.name~="^.+/"`,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			listFilter, eventFilter := createFilters(stringListToUrlList(t, tt.registries))

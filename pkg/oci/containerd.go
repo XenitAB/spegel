@@ -40,8 +40,8 @@ type Containerd struct {
 	registryConfigPath string
 }
 
-func NewContainerd(sock, namespace, registryConfigPath string, registries []url.URL) (*Containerd, error) {
-	listFilter, eventFilter := createFilters(registries)
+func NewContainerd(sock, namespace, registryConfigPath string, filterRegistries []url.URL) (*Containerd, error) {
+	listFilter, eventFilter := createFilters(filterRegistries)
 	return &Containerd{
 		clientGetter: func() (*containerd.Client, error) {
 			return containerd.New(sock, containerd.WithDefaultNamespace(namespace))
@@ -417,12 +417,17 @@ func getEventImage(e typeurl.Any) (string, EventType, error) {
 	}
 }
 
-func createFilters(registries []url.URL) (string, string) {
+func createFilters(filterRegistries []url.URL) (string, string) {
 	registryHosts := []string{}
-	for _, registry := range registries {
+	for _, registry := range filterRegistries {
 		registryHosts = append(registryHosts, strings.ReplaceAll(registry.Host, `.`, `\\.`))
 	}
 	listFilter := fmt.Sprintf(`name~="^(%s)/"`, strings.Join(registryHosts, "|"))
+	if len(registryHosts) == 0 {
+		// Filter images that do not have a registry in it's reference,
+		// as we cant mirror images without registries.
+		listFilter = `name~="^.+/"`
+	}
 	eventFilter := fmt.Sprintf(`topic~="/images/create|/images/update|/images/delete",event.%s`, listFilter)
 	return listFilter, eventFilter
 }

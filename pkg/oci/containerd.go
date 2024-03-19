@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd"
 	eventtypes "github.com/containerd/containerd/api/events"
@@ -304,7 +305,7 @@ func (c *Containerd) GetManifest(ctx context.Context, dgst digest.Digest) ([]byt
 	return b, mt, nil
 }
 
-func (c *Containerd) CopyLayer(ctx context.Context, dgst digest.Digest, dst io.Writer) error {
+func (c *Containerd) CopyLayer(ctx context.Context, dgst digest.Digest, dst io.Writer, bsize int) error {
 	client, err := c.Client()
 	if err != nil {
 		return err
@@ -314,10 +315,21 @@ func (c *Containerd) CopyLayer(ctx context.Context, dgst digest.Digest, dst io.W
 		return err
 	}
 	defer ra.Close()
-	_, err = io.Copy(dst, content.NewReader(ra))
+
+	startTime := time.Now()
+
+	// Use a buffer to improve copy performance
+	buffer := make([]byte, bsize)
+
+	wSize, err := io.CopyBuffer(dst, content.NewReader(ra), buffer)
+	duration := time.Since(startTime)
+
 	if err != nil {
 		return err
+	} else {
+		fmt.Printf("Blob io.CopyBuffer completed in %s, blob size is %v", duration, wSize)
 	}
+
 	return nil
 }
 
